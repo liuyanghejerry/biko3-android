@@ -1,124 +1,205 @@
-# 尾行 3 · Biko3 iOS
+# Biko3 Android
 
-在 iPhone 上游玩《尾行 3》，支持横屏、屏幕虚拟手柄和实体手柄。
+> **This is the Android port.** It is a fork of
+> **[hyc1743/biko3-ios](https://github.com/hyc1743/biko3-ios)** — the iOS port of Biko3 by
+> [hyc1743](https://github.com/hyc1743). The offline guest rewriter, the native host kernel
+> (nxnative), the 106-hook table, the Vulkan bridge and the resource-pack tooling all come from
+> that project. This fork keeps them intact and replaces only the platform layer with an Android
+> implementation (window and presentation, audio, input, files, lifecycle, thread slots).
+> The iOS app is unaffected and continues upstream.
 
-当前正式版为 **[v0.1.1](https://github.com/hyc1743/biko3-ios/releases/tag/v0.1.1)**，已启用资源中现成的中文补丁。已有 dev.3 资源的玩家只需覆盖安装新版 IPA，无需重新下载或复制资源。
+## What this is
 
-## Android
+Biko3 is a Nintendo Switch game shipped as an AArch64 NRO. The iOS port runs it natively: the NRO
+is statically rewritten offline, embedded in the app as a guest image, and driven by a native host
+that emulates the libnx and Vulkan surface the game expects. This fork does the same on Android:
 
-Android 版复用同一份 guest 静态改写、宿主内核与 Vulkan 桥，只替换平台层（窗口、音频、输入、文件、
-生命周期）。构建方法、模拟器说明与已验证项目见 [docs/android-port.md](docs/android-port.md)；
-可行性调研与风险清单见 [docs/android-port-feasibility.md](docs/android-port-feasibility.md)。
+- the guest image is reconstructed from the public IPA and patched for Android's thread-pointer
+  conventions;
+- the host kernel, hooks and Vulkan bridge are shared with the iOS port, with Android branches for
+  `VK_KHR_android_surface`, AAudio, `ANativeWindow` and the Android lifecycle;
+- the picture is presented through a `TextureView` in a centred 16:9 box, so display rotation and
+  letterboxing stay consistent with the on-screen controls;
+- the six `.b3data` volumes are verified and unpacked by the app itself (SHA-256 for the volumes
+  and for every extracted file).
 
-当前进度：APK 在 x86_64 模拟器与 arm64 真机上均可运行——自检通过，Vulkan 直连出帧，音频正常，
-标题画面 60 fps，横屏 16:9 呈现（TextureView），虚拟手柄按 dp 布局，触摸/手柄可进入角色选择。
-应用内资源导入、自动冒烟脚本均已就绪；x86 模拟器翻译层的少数指令缺口由镜像补丁兜底。
+## Status
 
-## 准备
+| Area | State | Notes |
+| --- | --- | --- |
+| Build (arm64-v8a, x86_64) | ✅ | no Gradle — aapt2 / javac / d8 / zipalign / apksigner |
+| Self-test | ✅ | guest image identity, file I/O, thread slots, Vulkan device + swapchain, audio |
+| Rendering | ✅ | direct Vulkan (`libvulkan.so`), swapchain presentation, 60 fps cap |
+| Audio | ✅ | AAudio, 48 kHz stereo signed 16-bit |
+| Guest boot | ✅ | libnx init → original `main` → title screen → character select |
+| Input | ✅ | touch, virtual pad, physical gamepad (Npad mapping) |
+| In-app data import | ✅ | six volumes verified, 169 files unpacked (≈2.7 GB) |
+| Verified on | ✅ | x86_64 emulator (API 30/36, ARM translation) and an arm64 Android 16 device |
 
-- 安装 iOS 26 或更新版本的 iPhone。
-- 从 [v0.1.1 正式版](https://github.com/hyc1743/biko3-ios/releases/tag/v0.1.1) 的 Assets 下载 `Biko3-development.ipa`，使用自己的签名与侧载工具安装。文件名仍保留 `development`，该 Release 为正式发布。IPA 未签名，项目不提供签名证书。
-- 从 [dev.3 下载页](https://github.com/hyc1743/biko3-ios/releases/tag/v0.1.0-dev.3) 下载下面列出的六个游戏资源分卷。资源单独提供，IPA 本身不包含 Data。
-- 手机需要容纳约 3 GB 的分卷和约 3 GB 的展开数据，首次导入时请预留足够空间。
+Builds are tested with NDK r30 and SDK 36. The app targets Android 8.0 (API 28) and newer.
 
-## 安装游戏资源
+## Requirements
 
-首次安装下载六个资源分卷即可，无需下载源码、安装 Python 或自行打包。已导入过资源的玩家更新 IPA 后可以继续使用原有数据，无需重复下载。
+- An arm64 Android device (or an x86_64 emulator with ARM translation for development).
+- A Vulkan-capable GPU; the game creates a graphics + compute queue and a 1280×720 swapchain.
+- About 3 GB for the six `.b3data` volumes plus about 2.7 GB for the unpacked game data.
 
-### 1. 下载全部六个分卷
+## Install (release build)
 
-在 [dev.3 的 Assets 列表](https://github.com/hyc1743/biko3-ios/releases/tag/v0.1.0-dev.3) 中下载以下文件，也可以点击表内链接：
-
-| 文件 | 大小 |
-| --- | ---: |
-| [Biko3Data.part001.b3data](https://github.com/hyc1743/biko3-ios/releases/download/v0.1.0-dev.3/Biko3Data.part001.b3data) | 512 MiB |
-| [Biko3Data.part002.b3data](https://github.com/hyc1743/biko3-ios/releases/download/v0.1.0-dev.3/Biko3Data.part002.b3data) | 512 MiB |
-| [Biko3Data.part003.b3data](https://github.com/hyc1743/biko3-ios/releases/download/v0.1.0-dev.3/Biko3Data.part003.b3data) | 512 MiB |
-| [Biko3Data.part004.b3data](https://github.com/hyc1743/biko3-ios/releases/download/v0.1.0-dev.3/Biko3Data.part004.b3data) | 512 MiB |
-| [Biko3Data.part005.b3data](https://github.com/hyc1743/biko3-ios/releases/download/v0.1.0-dev.3/Biko3Data.part005.b3data) | 512 MiB |
-| [Biko3Data.part006.b3data](https://github.com/hyc1743/biko3-ios/releases/download/v0.1.0-dev.3/Biko3Data.part006.b3data) | 约 284 MiB |
-
-六卷合计约 2.98 GB，**必须全部下载，保持原文件名**。应用内置匹配的校验清单，复制完成后会自动检查完整性。不要把 GitHub 自动生成的 `Source code` 压缩包当作游戏资源。
-
-### 2. 复制到 iPhone
-
-首次打开 Biko3，让应用创建文件目录。然后通过“文件”App，或电脑上的 Apple Devices / iTunes 文件共享，将 **六个 `.b3data` 文件**复制到：
-
-```text
-文件 → 我的 iPhone → Biko3
+```sh
+python3 tools/build_android.py --abi arm64-v8a --release
+adb install -r work/android/Biko3-android-release.apk
 ```
 
-直接放在 Biko3 根目录即可，也可以放到其中的 `ResourcePacks` 文件夹。保持原文件名，无需复制 JSON 清单，也不要手动解压分卷。
+The release APK is signed with a local key generated on first use at
+`~/.android/biko3-release.keystore` (alias `biko3`). Keep that keystore: updates must be signed
+with the same key. The APK is not debuggable and the development status overlay is hidden.
 
-### 3. 自动导入
+The application id stays `io.github.hyc1743.biko3` so that existing installs keep upgrading; the
+launcher label is **Biko3 Android**.
 
-返回 Biko3，应用会自动校验并展开资源，界面显示当前进度。请保持应用在前台。
+## Game data
 
-- 提示缺卷或校验失败：补齐或重新复制提示中的文件，再点“重新检查 / 继续解包”。
-- 中断后重开：已完成且校验正确的文件会保留，未完成文件重新展开。
-- 导入完成：自动进入游戏。确认可以游玩后，可删除手机里的六个分卷，释放约 3 GB 空间；保留 `game/Data`。
+The six `Biko3Data.partNNN.b3data` volumes (≈2.98 GB total) are distributed separately from the
+app. Put them where the app can read them and let the app import them:
 
-也可直接复制自己已有的完整 Data，目录结构必须是 `Biko3/game/Data`，避免多嵌套一层 `Data/Data`。自行打包和 SHA-256 校验方法见[资源分卷指南](docs/resource-packs.md)。
-
-## 中文补丁
-
-v0.1.1 自动读取现有资源中的 `game/Data/patch.pp`，无需单独下载汉化补丁或移动文件。使用自己已有的 Data 时，请确认其中包含原补丁；缺少补丁时仍显示原文。
-
-本项目原样套用已有汉化，保留原汉化组署名，不额外翻译或修改贴图。补丁包含简体中文剧情，部分菜单使用繁体字，未覆盖的日文和英文保持原样。已在 macOS 运行中确认补丁加载及菜单中文显示；本版 iPhone 显示和完整剧情仍需实际游玩验证。
-
-## 操作
-
-虚拟手柄与实体手柄按相同的位置映射：
-
-```text
-       Y
-   X       B
-       A
+```sh
+adb push Biko3Data.part00*.b3data \
+  /storage/emulated/0/Android/data/io.github.hyc1743.biko3/files/ResourcePacks/
 ```
 
-| 位置 | 游戏按键 |
+Launch the app. It verifies all six volumes, restores the 169 original files under
+`files/game/Data` (about 2.7 GB), and starts the game when the data is complete. The import is
+resumable: files that were already extracted and verified are skipped.
+
+Alternatively, if the data has already been unpacked on the host:
+
+```sh
+adb push <unpacked>/Data \
+  /storage/emulated/0/Android/data/io.github.hyc1743.biko3/files/game/
+```
+
+The app reads logs and saves from the same external directory (`files/log.txt`, `files/saves/`).
+
+## Build from source
+
+Set the SDK and NDK environment first (for example `source ~/.local/share/firered-mobile/android-env.sh`
+if you use the same setup), then:
+
+```sh
+# development build (debuggable, both ABIs by default)
+python3 tools/build_android.py --abi arm64-v8a --install --run
+
+# release build (signed, not debuggable)
+python3 tools/build_android.py --abi arm64-v8a --release
+
+# package only, reusing the staged sources
+python3 tools/build_android.py --abi arm64-v8a --no-stage --package-only
+```
+
+`tools/stage_android.py` prepares everything the build needs: the upstream host sources are copied
+and patched (`tools/patch_android_host.py`), the hook table and game profile are generated, the
+guest image is patched (`tools/patch_android_guest_image.py`) and the assets/manifest are staged
+under `work/android/staged`.
+
+To rebuild the guest image from the public IPA, use `tools/extract_ios_guest.py`.
+
+## Controls
+
+- **Touch**: the picture area is a touchscreen; touches outside the 16:9 box are ignored.
+- **Virtual pad**: d-pad (52 dp arms), A/B/X/Y (60 dp), ZL/ZR, and +/−, laid out in dp so the
+  controls stay finger-sized on high-density screens. A is on the right and B on the bottom,
+  matching the Nintendo face-button layout.
+- **Physical gamepad / keyboard**: standard Android key events are mapped to the same Npad mask
+  (A/B/X/Y, L1/R1 as ZL/ZR, dpad, start/select as +/−).
+
+The Switch build's own help text documents the controls it uses: left stick (cursor movement),
+ZL (slow movement), d-pad (selection), A (confirm), B (back), + (confirm in some screens), −
+(toggle the FPS display), and touch. The PC version's Z/X/C/F5 keys are not part of the Switch
+guest's input protocol.
+
+## How it works
+
+- **Guest**: the rewritten NRO image, its fixups/gates metadata and the hook table are installed
+  into the app's private storage on first launch; `tools/patch_android_guest_image.py` retargets
+  the thread-pointer reads to `tpidr_el0` and rewrites two scalar FP conversion instructions that
+  the x86 emulator's ARM translator rejects.
+- **Thread slots**: the rewritten guest reads its per-thread data as `[TP + offset]`. Because the
+  distance between the thread pointer and dynamic TLS blocks is not stable (and is arbitrary under
+  the ARM translator), each guest thread gets a private clone of its ARM TLS block, the slots are
+  placed a fixed distance below the clone, and the thread pointer is moved into the clone. Host
+  code keeps working because the cloned TCB still points at the real DTV, `bionic_tls` and pthread
+  structures.
+- **Presentation**: a `TextureView` composites through hwui, so the game picture follows the same
+  display rotation as the on-screen controls (a `SurfaceView` does not on a rotated display). A
+  `FrameLayout` subclass measures the largest centred 16:9 box on the first layout pass, so the
+  surface is created at its final size.
+- **Audio**: libnx `audout` calls are translated to an AAudio stream (48 kHz, stereo, 16-bit) with
+  a small queue and a silent-sink fallback.
+- **Pacing**: presents are paced after `vkQueuePresentKHR` to the display rate (default 60 fps,
+  `BIKO3_FPS=0` disables the cap), because the Android present path does not block on vblank.
+
+## Repository layout
+
+| Path | Contents |
 | --- | --- |
-| 上 | Y |
-| 下 | A |
-| 左 | X |
-| 右 | B |
+| `android/app/` | manifest, Activity, virtual gamepad, resource importer, JNI declarations |
+| `android/port/` | Android platform layer: Darwin shims, TLS slots, selftest, front end, AAudio |
+| `ios/runtime/` | shared runtime (Vulkan bridge, libnx boot, input, hooks) with Android branches |
+| `tools/` | staging, build, guest-image patching, IPA extraction, smoke test |
+| `docs/android-port.md` | Android port notes, designs, limits and commands |
+| `docs/android-port-feasibility.md` | feasibility study and risk register |
 
-实体手柄按四个面键的物理位置映射；不同品牌的印刷字样可能不同。肩键、扳机、方向键和摇杆保持各自功能。
+## Verification and logs
 
-连接系统可识别的实体手柄后，虚拟手柄自动隐藏，断开后恢复。虚拟手柄顶部的 `2D / 3D` 按钮用于切换布局；需要方向键和右摇杆时切换至 `3D`。右摇杆通过右侧空白区域滑动操作。
+```sh
+python3 tools/android_smoke.py --serial <device>
+```
 
-## 存档、更新和日志
+The smoke test builds (unless `--no-build`), installs, launches the app and reports whether the
+self-test passed, the guest booted, the renderer came up and the game is running. Guest output is
+also written to `Android/data/io.github.hyc1743.biko3/files/log.txt`.
 
-以下路径均以“文件 → 我的 iPhone → Biko3”为根目录：
+## Known limitations
 
-| 路径 | 内容 |
-| --- | --- |
-| `game/Data` | 展开后的游戏资源，游玩时需保留 |
-| `ResourcePacks` | 可选的资源分卷存放目录 |
-| `saves` | 存档，建议定期备份 |
-| `log.txt` | 本次启动与运行日志 |
-| `log.prev.txt` | 上一次运行日志 |
+- On the x86_64 emulator the ARM translator needs the two FP-conversion fixups above; a real arm64
+  device executes the original instructions natively.
+- The activity is locked to landscape and the picture is letterboxed to 16:9; the app does not
+  switch between portrait and landscape at runtime.
+- Saves from the iOS port are not imported automatically; the save directory layout differs.
+- The release build uses a locally generated signing key; it is not distributed through an app
+  store.
 
-更新到 v0.1.1：
+## Relationship to the iOS project
 
-1. 先导出备份 `saves` 文件夹。
-2. 下载新版 IPA，使用与旧版相同的签名账号和应用标识覆盖安装；不要先卸载旧版。
-3. 打开游戏，继续使用已有的 `game/Data` 和存档。已导入 dev.3 资源的玩家无需重传六个分卷。
+This repository is a **fork** of [hyc1743/biko3-ios](https://github.com/hyc1743/biko3-ios) and
+would not exist without it:
 
-若侧载工具提示签名或应用标识不匹配，请先保留备份，再检查签名设置。快存与快读功能未包含在 v0.1.1 中。
+- the offline static rewriter, the guest hook manifests and the nxnative host kernel are the iOS
+  project's work;
+- the Vulkan bridge, libnx adapters, input mapping and resource-pack format come from there;
+- this fork adds the Android platform layer, the Android build pipeline, the in-app importer and
+  the Android-specific fixes described above, and keeps the iOS sources for the shared runtime.
 
-遇到闪退、黑屏、无声或操作异常，可在 [Issues](https://github.com/hyc1743/biko3-ios/issues) 提供 iPhone 型号、iOS 版本、应用版本、复现步骤，以及 `log.txt` 和 `log.prev.txt`。画面问题可附截图或录屏。只保留上一轮日志，出问题后请尽快导出，避免连续重启覆盖。日志保存在本机，不会自动上传。
+The iOS app remains maintained upstream; Android-specific changes live in this fork.
 
-## 参考项目与致谢
+## Credits
 
-感谢以下项目及其贡献者：
+- [hyc1743/biko3-ios](https://github.com/hyc1743/biko3-ios) — the iOS port this project is forked
+  from: guest rewriting, native host, hooks, Vulkan bridge and resource tooling.
+- [seedds/nxnative](https://github.com/seedds/nxnative) — the native host, rewriter and platform
+  services the ports build on.
+- [KhronosGroup/MoltenVK](https://github.com/KhronosGroup/MoltenVK) — Vulkan on Metal, used by the
+  iOS side of the shared runtime.
+- [switchbrew/libnx](https://github.com/switchbrew/libnx) — platform interface references.
+- The Chinese patch authors and the resource-pack contributors whose work ships in the data
+  volumes; their original credits are preserved.
+- [jhaizhou-ops/d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile) and
+  [LNPANDY/nxnative-romfs-archive](https://github.com/LNPANDY/nxnative-romfs-archive) — references
+  for the iOS adaptation and for splitting large resource sets into volumes.
 
-- 原中文补丁作者及汉化组：本版直接使用资源中已有的剧本、字体与图片补丁，保留补丁中的原始署名。
+## License
 
-- [seedds/nxnative](https://github.com/seedds/nxnative)：本项目使用的原生宿主、指令改写工具、平台服务及触控／手柄前端的基础。
-- [jhaizhou-ops/d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)：参考其将原有游戏适配到 iOS 的实现与使用体验设计。
-- [LNPANDY/nxnative-romfs-archive](https://github.com/LNPANDY/nxnative-romfs-archive)：参考其解决大量资源文件传输与安装问题的分卷思路。本项目使用自己的 `.b3data` 格式并在首次启动时展开资源。
-- [KhronosGroup/MoltenVK](https://github.com/KhronosGroup/MoltenVK)：将 Vulkan 图形与计算调用接到 Metal。
-- [switchbrew/libnx](https://github.com/switchbrew/libnx) 及相关工具链贡献者：平台接口资料与运行时兼容参考。
-
-各项目保留其原有许可证，详见 [THIRD_PARTY.md](THIRD_PARTY.md)。本仓库原创适配代码与工具使用 [MIT 许可证](LICENSE)；游戏程序、图像及其他资源的权利归原权利人所有。
+The adaptation code and tools in this repository are released under the MIT license; see
+[LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md). The game program, images and other assets
+remain the property of their respective rights holders.

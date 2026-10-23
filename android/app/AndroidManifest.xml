@@ -4,7 +4,7 @@
     <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="Biko3"
+        android:label="Biko3 Android"
         android:allowBackup="false"
         android:debuggable="true"
         android:hasFragileUserData="true"
