@@ -2,6 +2,9 @@
  * This file never rewrites executable pages and never relocates the image. */
 #include "Biko3Libnx.h"
 #include "Biko3FS.h"
+#if defined(__ANDROID__)
+#include "dm_tsd.h"
+#endif
 #include "Biko3Audio.h"
 #include "Biko3GameProbe.h"
 #include <pthread.h>
@@ -66,6 +69,10 @@ void *biko3_libnx_resolve(const char *name) {
 
 int biko3_libnx_boot(uint8_t *base, size_t size, uint32_t handle,
                      int argc, char **argv) {
+#if defined(__ANDROID__)
+    /* Android: compute this thread's guest slot offset before guest code. */
+    dm_tsd_attach();
+#endif
     biko3_libnx_bind(base, size);
     biko3_bind_guest_hooks(base, size);
     uint64_t r[32] = {0};
@@ -103,11 +110,17 @@ int biko3_libnx_boot(uint8_t *base, size_t size, uint32_t handle,
 #endif
     *(uintptr_t *)(base + BIKO3_STACK_TOP) = stack;
     fprintf(stderr, "[biko3] libnx init +%#x, heap %zu MiB\n", BIKO3_INIT, heap_size >> 20);
+#if defined(__ANDROID__)
+    dm_tsd_attach();   /* the last host call before guest code */
+#endif
     ((void (*)(const ConfigEntry *, uint64_t, void *))(base + BIKO3_INIT))(
         config, UINT64_MAX, (void *)loader_return);
     fprintf(stderr, "[biko3] original libnx init completed\n");
     /* Do not call run_module_inits: libnx's __libc_init_array has already run. */
     fprintf(stderr, "[biko3] entering original main +%#x\n", BIKO3_MAIN);
+#if defined(__ANDROID__)
+    dm_tsd_attach();
+#endif
     int result = ((int (*)(int, char **))(base + BIKO3_MAIN))(argc, argv);
     fprintf(stderr, "[biko3] original main returned %d\n", result);
     return result;

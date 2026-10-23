@@ -4,6 +4,16 @@
 
 当前正式版为 **[v0.1.1](https://github.com/hyc1743/biko3-ios/releases/tag/v0.1.1)**，已启用资源中现成的中文补丁。已有 dev.3 资源的玩家只需覆盖安装新版 IPA，无需重新下载或复制资源。
 
+## Android
+
+Android 版复用同一份 guest 静态改写、宿主内核与 Vulkan 桥，只替换平台层（窗口、音频、输入、文件、
+生命周期）。构建方法、模拟器说明与已验证项目见 [docs/android-port.md](docs/android-port.md)；
+可行性调研与风险清单见 [docs/android-port-feasibility.md](docs/android-port-feasibility.md)。
+
+当前进度：APK 在 x86_64 模拟器与 arm64 真机上均可运行——自检通过，Vulkan 直连出帧，音频正常，
+标题画面 60 fps，横屏 16:9 呈现（TextureView），虚拟手柄按 dp 布局，触摸/手柄可进入角色选择。
+应用内资源导入、自动冒烟脚本均已就绪；x86 模拟器翻译层的少数指令缺口由镜像补丁兜底。
+
 ## 准备
 
 - 安装 iOS 26 或更新版本的 iPhone。
